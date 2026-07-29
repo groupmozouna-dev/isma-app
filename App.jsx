@@ -98,7 +98,7 @@ function nextStatus(order) {
 // Uses plain fetch() against Supabase's REST API — @supabase/supabase-js isn't in this
 // artifact's available-library list, so we talk to PostgREST + GoTrue directly instead.
 const SUPABASE_URL = 'https://umquvsqlguskocoxfukq.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_iFjd83RSqyQecqoICKaWtQ_qP0UpTJW'; // publishable/anon — safe to expose
+const SUPABASE_KEY = 'sb_publishable_9ACGdnrBq3WqU7sIdaKqxA_q3FodgcE'; // publishable/anon — safe to expose
 
 function toSnakeCase(str) { return str.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`); }
 function toCamelCase(str) { return str.replace(/_([a-z])/g, (_, l) => l.toUpperCase()); }
@@ -124,8 +124,13 @@ async function supabaseSignIn(email, password) {
     headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error_description || data.msg || 'فشل تسجيل الدخول');
+  const rawText = await res.text();
+  let data = {};
+  try { data = JSON.parse(rawText); } catch { /* response wasn't JSON at all */ }
+  if (!res.ok) {
+    const detail = data.error_description || data.msg || data.error || data.message || rawText || '(بلا تفاصيل)';
+    throw new Error(`فشل الدخول [${res.status}]: ${detail}`);
+  }
   return data;
 }
 
@@ -2632,6 +2637,7 @@ function useIsmaData() {
 
   return {
     clients, orders, payments, suppliers, variants, purchases, ledger, shipments, auditLog, categories,
+    setClients, setOrders,
     loaded, loadError, role, setRole, assistantCanPurchase, setAssistantCanPurchase, toast,
     handleAddCategory, handleRemoveCategory, handleAdvance, handleAddPayment, handleAddSupplierPayment,
     handleLinkVariant, handleCreateShipment, handleUpdateShipmentStatus, handleRecordShippingLedgerEntry,
@@ -2691,6 +2697,7 @@ export default function IsmaAdmin() {
   const [session, setSession] = useState(null);
   const {
     clients, orders, payments, suppliers, variants, purchases, ledger, shipments, auditLog, categories,
+    setClients, setOrders,
     loaded, loadError, role, setRole, assistantCanPurchase, setAssistantCanPurchase, toast,
     handleAddCategory, handleRemoveCategory, handleAdvance, handleAddPayment, handleAddSupplierPayment,
     handleLinkVariant, handleCreateShipment, handleUpdateShipmentStatus, handleRecordShippingLedgerEntry,
