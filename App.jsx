@@ -98,7 +98,7 @@ function nextStatus(order) {
 // Uses plain fetch() against Supabase's REST API — @supabase/supabase-js isn't in this
 // artifact's available-library list, so we talk to PostgREST + GoTrue directly instead.
 const SUPABASE_URL = 'https://umquvsqlguskocoxfukq.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_9ACGdnrBq3WqU7sIdaKqxA_q3FodgcE'; // publishable/anon — safe to expose
+const SUPABASE_KEY = 'sb_publishable_iFjd83RSqyQecqoICKaWtQ_qP0UpTJW'; // publishable/anon — safe to expose
 
 function toSnakeCase(str) { return str.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`); }
 function toCamelCase(str) { return str.replace(/_([a-z])/g, (_, l) => l.toUpperCase()); }
