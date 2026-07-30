@@ -2691,7 +2691,11 @@ function LoginScreen({ onSignedIn }) {
 }
 
 export default function IsmaAdmin() {
-  const [appMode, setAppMode] = useState('admin');
+  const [appMode, setAppMode] = useState(() =>
+    typeof window !== 'undefined' && window.location.pathname.replace(/\/+$/, '') === '/catalog'
+      ? 'customer'
+      : 'admin'
+  );
   const [view, setView] = useState({ name: 'dashboard' });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [session, setSession] = useState(null);
