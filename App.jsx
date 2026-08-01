@@ -393,6 +393,7 @@ const MODULE_COLORS = {
   purchases: '#D97706', // vivid amber/gold
   shipments: '#2563EB', // vivid blue
   ledger: '#059669',    // vivid emerald
+  products: '#7C3AED',  // vivid violet
 };
 
 function KPICard({ label, value, accent, color }) {
@@ -1361,6 +1362,20 @@ function applyReceivedCostUpdate(variant, purchase) {
   return { ...variant, stockQuantity: newQty, averageInventoryCost: Math.round(newAvg * 100) / 100 };
 }
 
+// Auto-generates "{category} {next number}" e.g. "عباية 6", scanning existing variants
+// in the same category so numbers never collide.
+function nextSequentialName(category, variants) {
+  const base = (category || 'منتج').trim();
+  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp('^' + escaped + '\\s+(\\d+)$');
+  const used = variants.filter(v => v.category === category).map(v => {
+    const m = v.name && v.name.match(pattern);
+    return m ? parseInt(m[1], 10) : 0;
+  });
+  const next = (used.length ? Math.max(...used) : 0) + 1;
+  return `${base} ${next}`;
+}
+
 function NewPurchaseModal({ suppliers, variants, categories, salesOrders, onClose, onCreate, onCreateSupplier, onCreateVariant }) {
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id || '');
   const [variantId, setVariantId] = useState(variants[0]?.id || '');
@@ -1382,25 +1397,11 @@ function NewPurchaseModal({ suppliers, variants, categories, salesOrders, onClos
   const [newVariantPrice, setNewVariantPrice] = useState('');
   const [newVariantImage, setNewVariantImage] = useState(null);
 
-  // Auto-generate a product name from category + next sequence number, e.g. "عباية 6".
-  // Skips names the user already customized (newVariantNameTouched) unless they clear the field.
-  const generateVariantName = useCallback((cat) => {
-    const base = (cat || 'منتج').trim();
-    const usedNumbers = variants
-      .filter(v => v.category === cat)
-      .map(v => {
-        const m = v.name && v.name.match(new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+(\\d+)$'));
-        return m ? parseInt(m[1], 10) : 0;
-      });
-    const next = (usedNumbers.length ? Math.max(...usedNumbers) : 0) + 1;
-    return `${base} ${next}`;
-  }, [variants]);
-
   useEffect(() => {
     if (showNewVariant && !newVariantNameTouched) {
-      setNewVariantName(generateVariantName(newVariantCategory));
+      setNewVariantName(nextSequentialName(newVariantCategory, variants));
     }
-  }, [showNewVariant, newVariantCategory, newVariantNameTouched, generateVariantName]);
+  }, [showNewVariant, newVariantCategory, newVariantNameTouched, variants]);
 
   const eligibleOrders = salesOrders.filter(o => o.originType === 'sourcing_order');
 
@@ -1454,7 +1455,7 @@ function NewPurchaseModal({ suppliers, variants, categories, salesOrders, onClos
                     placeholder="اسم المنتج (كيتولّد وحدو)"
                     className="flex-1 px-2.5 py-1.5 rounded-md border border-stone-300 text-xs" />
                   <button type="button" title="ولّد اسم جديد"
-                    onClick={() => { setNewVariantNameTouched(false); setNewVariantName(generateVariantName(newVariantCategory)); }}
+                    onClick={() => { setNewVariantNameTouched(false); setNewVariantName(nextSequentialName(newVariantCategory, variants)); }}
                     className="px-2 rounded-md border border-stone-300 text-xs bg-white hover:bg-stone-50">🔄</button>
                 </div>
                 <select value={newVariantCategory} onChange={e => setNewVariantCategory(e.target.value)} className="w-full px-2.5 py-1.5 rounded-md border border-stone-300 text-xs bg-white">
@@ -2331,12 +2332,108 @@ function FinancialLedgerView({ ledger, orders, clients }) {
   );
 }
 
+function ProductCard({ variant, categories, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(variant.name);
+  const [category, setCategory] = useState(variant.category);
+  const [price, setPrice] = useState(variant.sellingPrice);
+  const isDraft = !variant.sellingPrice || variant.sellingPrice <= 0;
+
+  const save = () => {
+    onSave(variant.id, { name: name.trim() || variant.name, category, sellingPrice: parseFloat(price) || 0 });
+    setEditing(false);
+  };
+
+  return (
+    <div className={`bg-white rounded-xl border ${isDraft ? 'border-[#7C3AED]/40' : 'border-stone-200'} overflow-hidden`}>
+      <div className="aspect-square bg-stone-100 relative">
+        {variant.images?.[0]
+          ? <img src={variant.images[0]} alt={variant.name} className="w-full h-full object-cover" />
+          : <div className="w-full h-full flex items-center justify-center text-stone-300"><PackageSearch size={28} /></div>}
+        {isDraft && <span className="absolute top-1.5 start-1.5 bg-[#7C3AED] text-white text-[10px] px-1.5 py-0.5 rounded-full">مسودة — كمّل التفاصيل</span>}
+      </div>
+      <div className="p-2.5 space-y-1.5">
+        {editing ? (
+          <>
+            <input value={name} onChange={e => setName(e.target.value)} className="w-full px-2 py-1 rounded-md border border-stone-300 text-xs" placeholder="اسم المنتج" />
+            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full px-2 py-1 rounded-md border border-stone-300 text-xs bg-white">
+              <option value="">بدون فئة</option>
+              {categories.filter(c => c !== 'all').map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="السعر" className="w-full px-2 py-1 rounded-md border border-stone-300 text-xs" />
+            <div className="flex gap-1.5">
+              <button onClick={save} className="flex-1 bg-[#7C3AED] text-white py-1 rounded-md text-xs">حفظ</button>
+              <button onClick={() => setEditing(false)} className="px-2 py-1 rounded-md border border-stone-300 text-xs">إلغاء</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-xs font-medium text-[#153630] truncate">{variant.name}</div>
+            <div className="text-[11px] text-stone-500">{variant.category || 'بدون فئة'}</div>
+            <div className="text-xs font-semibold text-[#7C3AED]">{variant.sellingPrice ? `${variant.sellingPrice} AED` : 'بلا سعر'}</div>
+            <button onClick={() => setEditing(true)} className="w-full mt-1 border border-[#7C3AED]/40 text-[#7C3AED] py-1 rounded-md text-[11px]">تعديل</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProductsManager({ variants, categories, onCreateVariant, onUpdateVariant }) {
+  const [bulkCategory, setBulkCategory] = useState(categories.find(c => c !== 'all') || '');
+  const fileInputRef = useRef(null);
+
+  const handleBulkFiles = (e) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const name = nextSequentialName(bulkCategory, variants);
+        onCreateVariant({ name, category: bulkCategory, sellingPrice: 0, currency: 'AED', images: [reader.result] });
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const draftCount = variants.filter(v => !v.sellingPrice || v.sellingPrice <= 0).length;
+
+  return (
+    <div>
+      <div className="bg-white rounded-xl border border-stone-200 p-4 mb-5">
+        <h3 className="font-display text-base text-[#153630] mb-2.5">رفع صور بالجملة</h3>
+        <p className="text-xs text-stone-500 mb-3">اختار الفئة مرة وحدة، بعدها اختار كل الصور دفعة واحدة — كل صورة غادي تولّي منتج "مسودة" بلا سعر، وترجع ليه بعدين تكمل التفاصيل.</p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <select value={bulkCategory} onChange={e => setBulkCategory(e.target.value)} className="flex-1 px-3 py-2 rounded-lg border border-stone-300 text-sm bg-white">
+            <option value="">بدون فئة</option>
+            {categories.filter(c => c !== 'all').map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <button onClick={() => fileInputRef.current?.click()} className="bg-[#7C3AED] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5">
+            <Plus size={16} /> اختار الصور
+          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleBulkFiles} className="hidden" />
+        </div>
+      </div>
+
+      {draftCount > 0 && (
+        <div className="text-xs text-[#7C3AED] mb-3">📝 عندك {draftCount} منتج(ات) مسودة كتستنى التفاصيل — كمّلهم أسفله.</div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {variants.map(v => <ProductCard key={v.id} variant={v} categories={categories} onSave={onUpdateVariant} />)}
+        {!variants.length && <div className="col-span-full text-center text-stone-400 text-sm py-10">لا توجد منتجات بعد — ابدأ برفع صور بالجملة فوق</div>}
+      </div>
+    </div>
+  );
+}
+
 // ============== APP SHELL ==============
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'الرئيسية', icon: Home, built: true },
   { key: 'orders', label: 'الطلبات', icon: Package, built: true },
   { key: 'clients', label: 'الزبناء', icon: Users, built: true },
+  { key: 'products', label: 'المنتجات', icon: PackageSearch, built: true },
   { key: 'purchases', label: 'المشتريات', icon: ShieldCheck, built: true },
   { key: 'shipments', label: 'الشحنات', icon: Truck, built: true },
   { key: 'payments', label: 'الدفعات', icon: CreditCard, built: true, ownerOnly: true },
@@ -2619,6 +2716,12 @@ function useIsmaData() {
     return id;
   }, [role, logAudit, showToast]);
 
+  const handleUpdateVariant = useCallback((id, patch) => {
+    setVariants(prev => prev.map(v => v.id === id ? { ...v, ...patch } : v));
+    logAudit([makeAuditEntry(role, 'ProductVariant', id, 'updated', null, patch.name || '')]);
+    showToast('تم تحديث المنتج');
+  }, [role, logAudit, showToast]);
+
   const handleCreatePurchase = useCallback((data, actingRole, actingCanPurchase) => {
     if (!(actingRole === 'owner' || (actingRole === 'assistant' && actingCanPurchase))) {
       alert('إنشاء عملية شراء يتطلب صلاحية can_execute_purchase.');
@@ -2670,7 +2773,7 @@ function useIsmaData() {
     handleAddCategory, handleRemoveCategory, handleAdvance, handleAddPayment, handleAddSupplierPayment,
     handleLinkVariant, handleCreateShipment, handleUpdateShipmentStatus, handleRecordShippingLedgerEntry,
     handleUpdateClientNotes, handleUpdateNotes, handleCreateClient, handleCreateOrder, handleCreateSupplier,
-    handleCreateVariant, handleCreatePurchase, handleMarkReceived,
+    handleCreateVariant, handleUpdateVariant, handleCreatePurchase, handleMarkReceived,
   };
 }
 
@@ -2734,7 +2837,7 @@ export default function IsmaAdmin() {
     handleAddCategory, handleRemoveCategory, handleAdvance, handleAddPayment, handleAddSupplierPayment,
     handleLinkVariant, handleCreateShipment, handleUpdateShipmentStatus, handleRecordShippingLedgerEntry,
     handleUpdateClientNotes, handleUpdateNotes, handleCreateClient, handleCreateOrder, handleCreateSupplier,
-    handleCreateVariant, handleCreatePurchase, handleMarkReceived,
+    handleCreateVariant, handleUpdateVariant, handleCreatePurchase, handleMarkReceived,
   } = useIsmaData();
 
   if (!loaded) {
@@ -2867,6 +2970,7 @@ export default function IsmaAdmin() {
               'order-detail': { label: 'تفاصيل الطلب', module: 'orders', Icon: Package },
               clients: { label: 'الزبناء', module: 'clients', Icon: Users },
               'client-detail': { label: 'ملف الزبون', module: 'clients', Icon: Users },
+              products: { label: 'المنتجات', module: 'products', Icon: PackageSearch },
               purchases: { label: 'المشتريات', module: 'purchases', Icon: Receipt },
               'purchase-detail': { label: 'تفاصيل الشراء', module: 'purchases', Icon: Receipt },
               payments: { label: 'الدفعات', module: 'orders', Icon: CreditCard },
@@ -2903,6 +3007,9 @@ export default function IsmaAdmin() {
             <ClientDetail client={activeClientProfile} orders={orders} ledger={ledger} role={role}
               onBack={() => setView({ name: 'clients' })} setView={setView}
               onUpdateNotes={handleUpdateClientNotes} />
+          )}
+          {view.name === 'products' && (
+            <ProductsManager variants={variants} categories={categories} onCreateVariant={handleCreateVariant} onUpdateVariant={handleUpdateVariant} />
           )}
           {view.name === 'purchases' && (
             <PurchasesList purchases={purchases} suppliers={suppliers} variants={variants} categories={categories} salesOrders={orders}
