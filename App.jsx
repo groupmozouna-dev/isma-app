@@ -1377,9 +1377,30 @@ function NewPurchaseModal({ suppliers, variants, categories, salesOrders, onClos
 
   const [showNewVariant, setShowNewVariant] = useState(false);
   const [newVariantName, setNewVariantName] = useState('');
+  const [newVariantNameTouched, setNewVariantNameTouched] = useState(false);
   const [newVariantCategory, setNewVariantCategory] = useState(categories[0] || '');
   const [newVariantPrice, setNewVariantPrice] = useState('');
   const [newVariantImage, setNewVariantImage] = useState(null);
+
+  // Auto-generate a product name from category + next sequence number, e.g. "عباية 6".
+  // Skips names the user already customized (newVariantNameTouched) unless they clear the field.
+  const generateVariantName = useCallback((cat) => {
+    const base = (cat || 'منتج').trim();
+    const usedNumbers = variants
+      .filter(v => v.category === cat)
+      .map(v => {
+        const m = v.name && v.name.match(new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+(\\d+)$'));
+        return m ? parseInt(m[1], 10) : 0;
+      });
+    const next = (usedNumbers.length ? Math.max(...usedNumbers) : 0) + 1;
+    return `${base} ${next}`;
+  }, [variants]);
+
+  useEffect(() => {
+    if (showNewVariant && !newVariantNameTouched) {
+      setNewVariantName(generateVariantName(newVariantCategory));
+    }
+  }, [showNewVariant, newVariantCategory, newVariantNameTouched, generateVariantName]);
 
   const eligibleOrders = salesOrders.filter(o => o.originType === 'sourcing_order');
 
@@ -1427,8 +1448,15 @@ function NewPurchaseModal({ suppliers, variants, categories, salesOrders, onClos
             </select>
             {showNewVariant && (
               <div className="mt-2 p-3 bg-white rounded-lg border border-stone-200 space-y-2">
-                <input value={newVariantName} onChange={e => setNewVariantName(e.target.value)} placeholder="اسم المنتج"
-                  className="w-full px-2.5 py-1.5 rounded-md border border-stone-300 text-xs" />
+                <div className="flex gap-1.5">
+                  <input value={newVariantName}
+                    onChange={e => { setNewVariantName(e.target.value); setNewVariantNameTouched(true); }}
+                    placeholder="اسم المنتج (كيتولّد وحدو)"
+                    className="flex-1 px-2.5 py-1.5 rounded-md border border-stone-300 text-xs" />
+                  <button type="button" title="ولّد اسم جديد"
+                    onClick={() => { setNewVariantNameTouched(false); setNewVariantName(generateVariantName(newVariantCategory)); }}
+                    className="px-2 rounded-md border border-stone-300 text-xs bg-white hover:bg-stone-50">🔄</button>
+                </div>
                 <select value={newVariantCategory} onChange={e => setNewVariantCategory(e.target.value)} className="w-full px-2.5 py-1.5 rounded-md border border-stone-300 text-xs bg-white">
                   {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   {!categories.length && <option value="">بدون فئة</option>}
@@ -1449,7 +1477,7 @@ function NewPurchaseModal({ suppliers, variants, categories, salesOrders, onClos
                 <button onClick={() => {
                   if (!newVariantName.trim()) return;
                   const id = onCreateVariant({ name: newVariantName.trim(), category: newVariantCategory, sellingPrice: parseFloat(newVariantPrice) || 0, currency: 'AED', images: newVariantImage ? [newVariantImage] : [] });
-                  setVariantId(id); setShowNewVariant(false); setNewVariantName(''); setNewVariantPrice(''); setNewVariantImage(null);
+                  setVariantId(id); setShowNewVariant(false); setNewVariantName(''); setNewVariantNameTouched(false); setNewVariantPrice(''); setNewVariantImage(null);
                 }} className="w-full bg-[#D97706] text-white py-1.5 rounded-md text-xs">حفظ المنتج</button>
               </div>
             )}
