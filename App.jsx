@@ -1376,6 +1376,17 @@ function nextSequentialName(category, variants) {
   return `${base} ${next}`;
 }
 
+// Picks the applicable price for a given quantity from priceTiers (falls back to sellingPrice).
+function priceForQty(variant, qty) {
+  const tiers = variant.priceTiers?.length ? variant.priceTiers : [{ minQty: 1, price: variant.sellingPrice || 0 }];
+  const sorted = [...tiers].sort((a, b) => a.minQty - b.minQty);
+  let applicable = sorted[0];
+  for (const t of sorted) { if (qty >= t.minQty) applicable = t; }
+  return applicable?.price || 0;
+}
+
+const ISMA_WHATSAPP_NUMBER = '971582112600'; // digits only, as required by wa.me links
+
 function NewPurchaseModal({ suppliers, variants, categories, salesOrders, onClose, onCreate, onCreateSupplier, onCreateVariant }) {
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id || '');
   const [variantId, setVariantId] = useState(variants[0]?.id || '');
@@ -1968,14 +1979,39 @@ function PaymentsView({ payments, orders, purchases, clients, suppliers, role })
 
 // ============== CUSTOMER-FACING CATALOG (same app, same state — genuinely shares data with admin) ==============
 
-function CustomerOrderModal({ variant, onClose, onConfirm }) {
+function CustomerOrderModal({ variant, categorySizeTypes, onClose, onConfirm }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
-  const [size, setSize] = useState('M');
+  const [size, setSize] = useState('');
   const [color, setColor] = useState('');
   const [qty, setQty] = useState(1);
-  const price = variant.sellingPrice || 0;
+  const [copied, setCopied] = useState(false);
+  const unitPrice = priceForQty(variant, qty);
+  const total = unitPrice * qty;
+  const sizeConfig = categorySizeTypes?.[variant.category] || { sizeType: 'free' };
+
+  const buildMessage = () => {
+    let msg = `مرحبا، عندي استفسار عن: ${variant.name}\n`;
+    msg += `السعر: ${unitPrice} د.إ للقطعة`;
+    if (qty > 1) msg += ` × ${qty} = ${total} د.إ`;
+    if (size) msg += `\nالمقاس: ${size}`;
+    if (color) msg += `\nاللون: ${color}`;
+    return msg;
+  };
+
+  const copyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(buildMessage());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard may be unavailable, fail silently */ }
+  };
+
+  const openWhatsApp = () => {
+    const url = `https://wa.me/${ISMA_WHATSAPP_NUMBER}?text=${encodeURIComponent(buildMessage())}`;
+    window.open(url, '_blank');
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
@@ -2006,6 +2042,22 @@ function CustomerOrderModal({ variant, onClose, onConfirm }) {
           ))}
         </div>
 
+        {variant.priceTiers?.length > 1 && (
+          <div className="mx-5 mb-3 bg-white rounded-xl border border-[#FBBF24]/30 p-3">
+            <div className="text-[11px] text-stone-500 mb-1.5">أسعار الجملة — كل ما زادت الكمية نزل السعر:</div>
+            <div className="space-y-1">
+              {[...variant.priceTiers].sort((a, b) => a.minQty - b.minQty).map((t, i, arr) => {
+                const active = qty >= t.minQty && (i === arr.length - 1 || qty < arr[i + 1].minQty);
+                return (
+                  <div key={i} className={`flex justify-between text-xs px-1.5 py-0.5 rounded ${active ? 'bg-[#FBBF24]/20 font-semibold text-[#92400E]' : 'text-stone-500'}`}>
+                    <span>{t.minQty}+ قطعة</span><span>{t.price} د.إ/قطعة</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="px-5 pb-5 space-y-3">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="الاسم الكامل"
             className="w-full px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none" />
@@ -2013,13 +2065,23 @@ function CustomerOrderModal({ variant, onClose, onConfirm }) {
             className="w-full px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none" />
           <input value={city} onChange={e => setCity(e.target.value)} placeholder="المدينة"
             className="w-full px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none" />
-          <div className="grid grid-cols-2 gap-2">
-            <select value={size} onChange={e => setSize(e.target.value)} className="px-3 py-2.5 rounded-xl border border-stone-300 text-sm bg-white">
-              {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'مقاس خاص'].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <input value={color} onChange={e => setColor(e.target.value)} placeholder="اللون"
-              className="px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none" />
-          </div>
+
+          {sizeConfig.sizeType !== 'none' && (
+            <div className="grid grid-cols-2 gap-2">
+              {sizeConfig.sizeType === 'list' ? (
+                <select value={size} onChange={e => setSize(e.target.value)} className="px-3 py-2.5 rounded-xl border border-stone-300 text-sm bg-white">
+                  <option value="">المقاس (اختياري)</option>
+                  {(sizeConfig.options || []).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              ) : (
+                <input value={size} onChange={e => setSize(e.target.value)} placeholder="المقاس (اختياري)"
+                  className="px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none" />
+              )}
+              <input value={color} onChange={e => setColor(e.target.value)} placeholder="اللون (اختياري)"
+                className="px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none" />
+            </div>
+          )}
+
           <div className="flex items-center justify-between bg-white rounded-xl border border-stone-300 px-3 py-2">
             <span className="text-sm text-stone-500">الكمية</span>
             <div className="flex items-center gap-3">
@@ -2032,14 +2094,28 @@ function CustomerOrderModal({ variant, onClose, onConfirm }) {
           {/* Bold price hero box — the focal element, matching the reference ad's oversized pricing */}
           <div className="rounded-2xl p-4 text-center" style={{ background: 'linear-gradient(135deg, #E9C989, #D97706)' }}>
             <div className="text-[11px] text-white/85 mb-1">السعر الإجمالي التقديري</div>
-            <div className="font-display text-4xl text-white leading-none">{price * qty}<span className="text-lg align-top ms-1">د.إ</span></div>
+            <div className="font-display text-4xl text-white leading-none">{total}<span className="text-lg align-top ms-1">د.إ</span></div>
+            {qty > 1 && <div className="text-[11px] text-white/85 mt-1">{unitPrice} د.إ × {qty} قطعة</div>}
           </div>
 
           <button
-            onClick={() => { if (name.trim() && phone.trim()) onConfirm({ name: name.trim(), phone: phone.trim(), city, size, color, qty, price: price * qty }); }}
+            onClick={() => { if (name.trim() && phone.trim()) onConfirm({ name: name.trim(), phone: phone.trim(), city, size, color, qty, price: total }); }}
             className="isma-shine-btn w-full bg-[#25D366] text-white py-3.5 rounded-full text-sm font-semibold hover:brightness-105 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg">
             <Send size={16} /> تأكيد وإرسال الطلب
           </button>
+
+          <div className="flex gap-2">
+            <button onClick={openWhatsApp}
+              className="flex-1 flex items-center justify-center gap-1.5 border border-[#25D366]/50 text-[#128C4A] py-2 rounded-full text-xs font-medium">
+              <MessageCircle size={14} /> تواصل عبر واتساب
+            </button>
+            <button onClick={copyMessage}
+              className="flex-1 flex items-center justify-center gap-1.5 border border-stone-300 text-stone-600 py-2 rounded-full text-xs font-medium">
+              {copied ? <CheckCircle2 size={14} className="text-[#059669]" /> : null}
+              {copied ? 'تم النسخ' : 'نسخ الرسالة'}
+            </button>
+          </div>
+
           <div className="text-[11px] text-stone-400 text-center">سنتواصل معك عبر واتساب لتأكيد التفاصيل والسعر النهائي قبل أي دفع</div>
         </div>
       </div>
@@ -2055,11 +2131,31 @@ const CATEGORY_DESCRIPTIONS = {
 function ProductDetailView({ product, onClose, onOrder }) {
   const img = product.images && product.images[0];
   const desc = CATEGORY_DESCRIPTIONS[product.category] || 'قطعة مُنتقاة بعناية من مورد موثوق فالخليج.';
+  const [shared, setShared] = useState(false);
+  const tiers = product.priceTiers?.length ? [...product.priceTiers].sort((a, b) => a.minQty - b.minQty) : null;
+
+  const shareProduct = async () => {
+    const url = `${window.location.origin}${window.location.pathname}?product=${product.id}`;
+    const shareData = { title: product.name, text: `شوف هاذ المنتج فكاتالوج ISMA: ${product.name}`, url };
+    if (navigator.share) {
+      try { await navigator.share(shareData); } catch { /* user cancelled share, no-op */ }
+    } else {
+      try {
+        await navigator.clipboard.writeText(url);
+        setShared(true);
+        setTimeout(() => setShared(false), 2000);
+      } catch { /* clipboard unavailable, no-op */ }
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
       <div className="bg-[#FBF6EA] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
         <div className="relative">
           <button onClick={onClose} className="absolute top-3 left-3 z-10 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center"><X size={16} /></button>
+          <button onClick={shareProduct} className="absolute top-3 right-3 z-10 h-8 px-3 rounded-full bg-black/40 text-white flex items-center gap-1 text-xs">
+            {shared ? <CheckCircle2 size={14} /> : <Send size={13} />} {shared ? 'تم النسخ' : 'مشاركة'}
+          </button>
           <div className="aspect-square bg-gradient-to-br from-[#EDE5D6] to-[#DCCFB4]">
             {img ? <img src={img} alt={product.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><Package size={48} className="text-[#153630]/25" /></div>}
           </div>
@@ -2067,9 +2163,23 @@ function ProductDetailView({ product, onClose, onOrder }) {
         <div className="p-5">
           <h2 className="font-display text-xl text-[#153630] mb-1">{product.name}</h2>
           <div className="text-xs text-stone-500 mb-3">{product.category}</div>
-          <div className="rounded-xl p-3 mb-4 text-center" style={{ background: 'linear-gradient(135deg, #EFD9AE, #C99A4E)' }}>
-            <span className="font-display text-2xl text-white">{product.sellingPrice || 0}<span className="text-sm align-top ms-1">د.إ</span></span>
-          </div>
+
+          {tiers && tiers.length > 1 ? (
+            <div className="rounded-xl p-3 mb-4 bg-white border border-[#D97706]/30">
+              <div className="text-[11px] text-stone-500 mb-1.5 text-center">السعر حسب الكمية</div>
+              {tiers.map((t, i) => (
+                <div key={i} className="flex justify-between text-sm px-1 py-1 border-t border-stone-100 first:border-t-0">
+                  <span className="text-stone-500">{t.minQty}+ قطعة</span>
+                  <span className="font-semibold text-[#92400E]">{t.price} د.إ/قطعة</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl p-3 mb-4 text-center" style={{ background: 'linear-gradient(135deg, #EFD9AE, #C99A4E)' }}>
+              <span className="font-display text-2xl text-white">{product.sellingPrice || 0}<span className="text-sm align-top ms-1">د.إ</span></span>
+            </div>
+          )}
+
           <p className="text-sm text-stone-600 mb-4 leading-relaxed">{desc}</p>
 
           <div className="grid grid-cols-3 gap-2 mb-5">
@@ -2092,7 +2202,7 @@ function ProductDetailView({ product, onClose, onOrder }) {
   );
 }
 
-function CustomerCatalog({ variants, clients, orders, setClients, setOrders, onSwitchToAdmin }) {
+function CustomerCatalog({ variants, clients, orders, categorySizeTypes, setClients, setOrders, onSwitchToAdmin }) {
   const [category, setCategory] = useState('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
@@ -2102,6 +2212,16 @@ function CustomerCatalog({ variants, clients, orders, setClients, setOrders, onS
   const categoriesRef = useRef(null);
   const searchInputRef = useRef(null);
 
+  // Deep-link support: a shared "?product=ID" URL opens that product's detail view directly.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const productId = params.get('product');
+    if (productId) {
+      const match = variants.find(v => String(v.id) === productId);
+      if (match) setDetailProduct(match);
+    }
+  }, [variants]);
+
   const handleConfirmOrder = useCallback(async (form) => {
     let client = clients.find(c => c.phone === form.phone);
     let updatedClients = clients;
@@ -2110,12 +2230,13 @@ function CustomerCatalog({ variants, clients, orders, setClients, setOrders, onS
       updatedClients = [...clients, client];
       setClients(updatedClients);
     }
+    const variantLabel = [form.size, form.color].filter(Boolean).join('، ');
     const newOrder = {
       id: Date.now() + 1, clientId: client.id,
-      productName: `${selected.name} (${form.size}${form.color ? '، ' + form.color : ''})`,
+      productName: `${selected.name}${variantLabel ? ` (${variantLabel})` : ''}`,
       productVariantId: selected.id, quantity: form.qty, agreedPrice: form.price, currency: 'AED', fxRateAtAgreement: 1,
       originType: 'storefront_sale', shippingArrangement: 'handled_by_isma', status: 'agreed',
-      notes: `طلب من الكاتالوج العام — مقاس: ${form.size}${form.color ? '، لون: ' + form.color : ''}`,
+      notes: `طلب من الكاتالوج العام${form.size ? ' — مقاس: ' + form.size : ''}${form.color ? '، لون: ' + form.color : ''}`,
       createdAt: new Date().toISOString().slice(0, 10),
     };
     setOrders([...orders, newOrder]);
@@ -2270,7 +2391,7 @@ function CustomerCatalog({ variants, clients, orders, setClients, setOrders, onS
         )}
       </div>
 
-      {selected && <CustomerOrderModal variant={selected} onClose={() => setSelected(null)} onConfirm={handleConfirmOrder} />}
+      {selected && <CustomerOrderModal variant={selected} categorySizeTypes={categorySizeTypes} onClose={() => setSelected(null)} onConfirm={handleConfirmOrder} />}
       {detailProduct && (
         <ProductDetailView product={detailProduct} onClose={() => setDetailProduct(null)}
           onOrder={(p) => { setDetailProduct(null); setSelected(p); }} />
@@ -2965,7 +3086,7 @@ export default function IsmaAdmin() {
 
   if (appMode === 'customer') {
     return (
-      <CustomerCatalog variants={variants} clients={clients} orders={orders}
+      <CustomerCatalog variants={variants} clients={clients} orders={orders} categorySizeTypes={categorySizeTypes}
         setClients={setClients} setOrders={setOrders}
         onSwitchToAdmin={() => setAppMode('admin')} />
     );
