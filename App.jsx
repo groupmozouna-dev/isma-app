@@ -2337,6 +2337,7 @@ function ProductCard({ variant, categories, onSave }) {
   const [name, setName] = useState(variant.name);
   const [category, setCategory] = useState(variant.category);
   const [price, setPrice] = useState(variant.sellingPrice);
+  const [showLightbox, setShowLightbox] = useState(false);
   const isDraft = !variant.sellingPrice || variant.sellingPrice <= 0;
 
   const save = () => {
@@ -2348,10 +2349,20 @@ function ProductCard({ variant, categories, onSave }) {
     <div className={`bg-white rounded-xl border ${isDraft ? 'border-[#7C3AED]/40' : 'border-stone-200'} overflow-hidden`}>
       <div className="aspect-square bg-stone-100 relative">
         {variant.images?.[0]
-          ? <img src={variant.images[0]} alt={variant.name} className="w-full h-full object-cover" />
+          ? <img src={variant.images[0]} alt={variant.name} onClick={() => setShowLightbox(true)}
+              className="w-full h-full object-cover cursor-zoom-in" />
           : <div className="w-full h-full flex items-center justify-center text-stone-300"><PackageSearch size={28} /></div>}
         {isDraft && <span className="absolute top-1.5 start-1.5 bg-[#7C3AED] text-white text-[10px] px-1.5 py-0.5 rounded-full">مسودة — كمّل التفاصيل</span>}
       </div>
+      {showLightbox && variant.images?.[0] && (
+        <div onClick={() => setShowLightbox(false)}
+          className="fixed inset-0 bg-black/85 z-[100] flex items-center justify-center p-4 cursor-zoom-out">
+          <button onClick={() => setShowLightbox(false)}
+            className="absolute top-4 end-4 text-white bg-white/10 rounded-full p-2"><X size={22} /></button>
+          <img src={variant.images[0]} alt={variant.name} onClick={e => e.stopPropagation()}
+            className="max-w-[92vw] max-h-[88vh] object-contain rounded-lg" />
+        </div>
+      )}
       <div className="p-2.5 space-y-1.5">
         {editing ? (
           <>
