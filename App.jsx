@@ -2066,9 +2066,9 @@ function CustomerOrderModal({ variant, categorySizeTypes, onClose, onConfirm }) 
           <input value={city} onChange={e => setCity(e.target.value)} placeholder="المدينة"
             className="w-full px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none" />
 
-          {sizeConfig.sizeType !== 'none' && (
-            <div className="grid grid-cols-2 gap-2">
-              {sizeConfig.sizeType === 'list' ? (
+          <div className="grid grid-cols-2 gap-2">
+            {sizeConfig.sizeType !== 'none' && (
+              sizeConfig.sizeType === 'list' ? (
                 <select value={size} onChange={e => setSize(e.target.value)} className="px-3 py-2.5 rounded-xl border border-stone-300 text-sm bg-white">
                   <option value="">المقاس (اختياري)</option>
                   {(sizeConfig.options || []).map(s => <option key={s} value={s}>{s}</option>)}
@@ -2076,11 +2076,11 @@ function CustomerOrderModal({ variant, categorySizeTypes, onClose, onConfirm }) 
               ) : (
                 <input value={size} onChange={e => setSize(e.target.value)} placeholder="المقاس (اختياري)"
                   className="px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none" />
-              )}
-              <input value={color} onChange={e => setColor(e.target.value)} placeholder="اللون (اختياري)"
-                className="px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none" />
-            </div>
-          )}
+              )
+            )}
+            <input value={color} onChange={e => setColor(e.target.value)} placeholder="اللون (اختياري)"
+              className={`px-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:border-[#D97706] focus:outline-none ${sizeConfig.sizeType === 'none' ? 'col-span-2' : ''}`} />
+          </div>
 
           <div className="flex items-center justify-between bg-white rounded-xl border border-stone-300 px-3 py-2">
             <span className="text-sm text-stone-500">الكمية</span>
@@ -2373,6 +2373,7 @@ function CustomerCatalog({ variants, clients, orders, categorySizeTypes, setClie
                     <div className="text-xs text-stone-500 mb-2.5">{v.category}</div>
                   </button>
                   <div className="rounded-lg p-2 mb-2.5 text-center" style={{ background: 'linear-gradient(135deg, #EFD9AE, #C99A4E)' }}>
+                    {v.priceTiers?.length > 1 && <div className="text-[9px] text-white/80 leading-none mb-0.5">يبدأ من</div>}
                     <span className="font-display text-lg text-white">{v.sellingPrice || 0}<span className="text-[10px] align-top ms-0.5">د.إ</span></span>
                   </div>
                   <button disabled={soldOut} onClick={() => setSelected(v)}
