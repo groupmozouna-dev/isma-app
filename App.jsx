@@ -1775,7 +1775,34 @@ function PurchaseDetail({ purchase, supplier, variant, linkedOrder, payments, ro
 
 // ============== SETTINGS (categories management + permissions summary) ==============
 
-function SettingsView({ categories, onAddCategory, onRemoveCategory, variants, role, assistantCanPurchase }) {
+function CategorySizeConfig({ cat, config, onSetCategorySizeType }) {
+  const [sizeType, setSizeType] = useState(config?.sizeType || 'free');
+  const [optionsText, setOptionsText] = useState((config?.options || []).join(', '));
+
+  const save = () => {
+    const options = sizeType === 'list' ? optionsText.split(',').map(s => s.trim()).filter(Boolean) : [];
+    onSetCategorySizeType(cat, sizeType, options);
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5 bg-white rounded-lg border border-stone-200 p-2.5">
+      <div className="text-xs font-medium text-[#153630]">{cat}</div>
+      <select value={sizeType} onChange={e => setSizeType(e.target.value)}
+        className="w-full px-2 py-1.5 rounded-md border border-stone-300 text-xs bg-white">
+        <option value="none">بدون مقاس (ستاندار)</option>
+        <option value="free">مقاس حر (يكتبه الزبون بنفسه)</option>
+        <option value="list">قائمة مقاسات محددة</option>
+      </select>
+      {sizeType === 'list' && (
+        <input value={optionsText} onChange={e => setOptionsText(e.target.value)}
+          placeholder="S, M, L, XL" className="w-full px-2 py-1.5 rounded-md border border-stone-300 text-xs" />
+      )}
+      <button onClick={save} className="self-start text-[11px] text-[#D97706] hover:underline">حفظ</button>
+    </div>
+  );
+}
+
+function SettingsView({ categories, onAddCategory, onRemoveCategory, categorySizeTypes, onSetCategorySizeType, variants, role, assistantCanPurchase }) {
   const [newCat, setNewCat] = useState('');
 
   const categoryInUse = (cat) => variants.some(v => v.category === cat);
@@ -1804,6 +1831,19 @@ function SettingsView({ categories, onAddCategory, onRemoveCategory, variants, r
             className="flex-1 px-3 py-2 rounded-lg border border-stone-300 text-sm transition-colors focus:border-[#D97706] focus:outline-none" />
           <button onClick={() => { if (newCat.trim()) { onAddCategory(newCat.trim()); setNewCat(''); } }}
             className="bg-[#D97706] text-white px-4 py-2 rounded-lg text-sm hover:brightness-105 active:scale-[0.98] transition-all">إضافة</button>
+        </div>
+      </div>
+
+      <div className="isma-card bg-[#FDF8ED] rounded-2xl border border-stone-200/70 p-5">
+        <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wide flex items-center gap-1.5 border-s-2 border-[#FBBF24]/50 ps-2 mb-4">
+          <Store size={13} className="opacity-70" /> نوع المقاس لكل فئة
+        </h4>
+        <p className="text-xs text-stone-500 mb-3">حدد كيفاش يظهر المقاس للزبون فالكاتالوج لكل فئة — المقاس دائمًا اختياري بالنسبة للزبون.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {categories.map(cat => (
+            <CategorySizeConfig key={cat} cat={cat} config={categorySizeTypes[cat]} onSetCategorySizeType={onSetCategorySizeType} />
+          ))}
+          {!categories.length && <div className="text-xs text-stone-400">زيد فئة أولاً باش تحدد نوع المقاس ديالها</div>}
         </div>
       </div>
 
@@ -2332,16 +2372,53 @@ function FinancialLedgerView({ ledger, orders, clients }) {
   );
 }
 
+function TierRow({ tier, index, prevTier, onChange, onRemove, canRemove }) {
+  const diffPct = prevTier && prevTier.price > 0 && tier.price > 0
+    ? Math.round((1 - tier.price / prevTier.price) * 100)
+    : null;
+  return (
+    <div className="flex items-center gap-1.5">
+      <input type="number" min="1" value={tier.minQty} onChange={e => onChange(index, { ...tier, minQty: e.target.value })}
+        placeholder="من كمية" className="w-16 px-1.5 py-1 rounded-md border border-stone-300 text-[11px]" />
+      <span className="text-[10px] text-stone-400">قطعة →</span>
+      <input type="number" min="0" value={tier.price} onChange={e => onChange(index, { ...tier, price: e.target.value })}
+        placeholder="السعر" className="flex-1 px-1.5 py-1 rounded-md border border-stone-300 text-[11px]" />
+      {diffPct !== null && diffPct !== 0 && (
+        <span className={`text-[10px] whitespace-nowrap ${diffPct > 0 ? 'text-[#059669]' : 'text-[#B24444]'}`}>
+          {diffPct > 0 ? `↓${diffPct}%` : `↑${Math.abs(diffPct)}%`}
+        </span>
+      )}
+      {canRemove && <button onClick={() => onRemove(index)} className="text-stone-400 hover:text-[#B24444]"><X size={12} /></button>}
+    </div>
+  );
+}
+
 function ProductCard({ variant, categories, onSave }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(variant.name);
   const [category, setCategory] = useState(variant.category);
-  const [price, setPrice] = useState(variant.sellingPrice);
+  const [tiers, setTiers] = useState(
+    variant.priceTiers?.length ? variant.priceTiers : [{ minQty: 1, price: variant.sellingPrice || '' }]
+  );
   const [showLightbox, setShowLightbox] = useState(false);
   const isDraft = !variant.sellingPrice || variant.sellingPrice <= 0;
 
+  const updateTier = (i, next) => setTiers(prev => prev.map((t, idx) => idx === i ? next : t));
+  const removeTier = (i) => setTiers(prev => prev.filter((_, idx) => idx !== i));
+  const addTier = () => {
+    const last = tiers[tiers.length - 1];
+    setTiers(prev => [...prev, { minQty: (parseInt(last?.minQty, 10) || 1) + 10, price: '' }]);
+  };
+
   const save = () => {
-    onSave(variant.id, { name: name.trim() || variant.name, category, sellingPrice: parseFloat(price) || 0 });
+    const cleanTiers = tiers
+      .map(t => ({ minQty: parseInt(t.minQty, 10) || 1, price: parseFloat(t.price) || 0 }))
+      .sort((a, b) => a.minQty - b.minQty);
+    onSave(variant.id, {
+      name: name.trim() || variant.name, category,
+      sellingPrice: cleanTiers[0]?.price || 0,
+      priceTiers: cleanTiers,
+    });
     setEditing(false);
   };
 
@@ -2371,8 +2448,14 @@ function ProductCard({ variant, categories, onSave }) {
               <option value="">بدون فئة</option>
               {categories.filter(c => c !== 'all').map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="السعر" className="w-full px-2 py-1 rounded-md border border-stone-300 text-xs" />
-            <div className="flex gap-1.5">
+            <div className="text-[10px] text-stone-500 pt-1">درجات الأسعار حسب الكمية:</div>
+            <div className="space-y-1">
+              {tiers.map((t, i) => (
+                <TierRow key={i} tier={t} index={i} prevTier={tiers[i - 1]} onChange={updateTier} onRemove={removeTier} canRemove={tiers.length > 1} />
+              ))}
+            </div>
+            <button onClick={addTier} className="text-[11px] text-[#7C3AED] hover:underline">+ درجة كمية جديدة</button>
+            <div className="flex gap-1.5 pt-1">
               <button onClick={save} className="flex-1 bg-[#7C3AED] text-white py-1 rounded-md text-xs">حفظ</button>
               <button onClick={() => setEditing(false)} className="px-2 py-1 rounded-md border border-stone-300 text-xs">إلغاء</button>
             </div>
@@ -2381,7 +2464,13 @@ function ProductCard({ variant, categories, onSave }) {
           <>
             <div className="text-xs font-medium text-[#153630] truncate">{variant.name}</div>
             <div className="text-[11px] text-stone-500">{variant.category || 'بدون فئة'}</div>
-            <div className="text-xs font-semibold text-[#7C3AED]">{variant.sellingPrice ? `${variant.sellingPrice} AED` : 'بلا سعر'}</div>
+            {variant.priceTiers?.length > 1 ? (
+              <div className="text-[11px] text-[#7C3AED] space-y-0.5">
+                {variant.priceTiers.map((t, i) => <div key={i}>{t.minQty}+ : {t.price} AED</div>)}
+              </div>
+            ) : (
+              <div className="text-xs font-semibold text-[#7C3AED]">{variant.sellingPrice ? `${variant.sellingPrice} AED` : 'بلا سعر'}</div>
+            )}
             <button onClick={() => setEditing(true)} className="w-full mt-1 border border-[#7C3AED]/40 text-[#7C3AED] py-1 rounded-md text-[11px]">تعديل</button>
           </>
         )}
@@ -2479,6 +2568,7 @@ function useIsmaData() {
   const [shipments, setShipments] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [categorySizeTypes, setCategorySizeTypes] = useState({});
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
@@ -2494,11 +2584,12 @@ function useIsmaData() {
         loadData('isma_shipments', seedShipments),
         loadData('isma_audit_log', []),
         loadData('isma_categories', ['عبايات', 'شيلات', 'مخاوير', 'أطقم مطرزة']),
+        loadData('isma_category_size_types', {}),
       ]);
-      const [c, o, p, s, v, pu, l, sh, al, cats] = results;
+      const [c, o, p, s, v, pu, l, sh, al, cats, cst] = results;
       setClients(c.value); setOrders(o.value); setPayments(p.value);
       setSuppliers(s.value); setVariants(v.value); setPurchases(pu.value); setLedger(l.value);
-      setShipments(sh.value); setAuditLog(al.value); setCategories(cats.value);
+      setShipments(sh.value); setAuditLog(al.value); setCategories(cats.value); setCategorySizeTypes(cst.value);
       // If ANY key failed to load, don't silently proceed as if this were a fresh/empty account —
       // surface it, and keep writes disabled until the user reloads and a clean load succeeds.
       const anyFailed = results.some(r => !r.ok);
@@ -2525,6 +2616,7 @@ function useIsmaData() {
   useEffect(() => { if (loaded) persistedSave('isma_shipments', shipments); }, [shipments, loaded]);
   useEffect(() => { if (loaded) persistedSave('isma_audit_log', auditLog); }, [auditLog, loaded]);
   useEffect(() => { if (loaded) persistedSave('isma_categories', categories); }, [categories, loaded]);
+  useEffect(() => { if (loaded) persistedSave('isma_category_size_types', categorySizeTypes); }, [categorySizeTypes, loaded]);
 
   const handleAddCategory = useCallback((cat) => {
     setCategories(prev => prev.includes(cat) ? prev : [...prev, cat]);
@@ -2534,6 +2626,12 @@ function useIsmaData() {
   const handleRemoveCategory = useCallback((cat) => {
     setCategories(prev => prev.filter(c => c !== cat));
   }, []);
+
+  // sizeType: 'none' (no size field at all) | 'free' (open text) | 'list' (fixed options e.g. S/M/L)
+  const handleSetCategorySizeType = useCallback((cat, sizeType, options = []) => {
+    setCategorySizeTypes(prev => ({ ...prev, [cat]: { sizeType, options } }));
+    showToast(`تم تحديث نوع المقاس لفئة "${cat}"`);
+  }, [showToast]);
 
   // Single append point for the entire app — every handler below calls this, never setAuditLog directly.
   const logAudit = useCallback((entries) => {
@@ -2721,7 +2819,8 @@ function useIsmaData() {
 
   const handleCreateVariant = useCallback((data) => {
     const id = Date.now();
-    setVariants(prev => [...prev, { id, name: data.name, category: data.category || '', stockQuantity: 0, averageInventoryCost: 0, sellingPrice: data.sellingPrice || 0, currency: data.currency || 'AED', images: data.images || [] }]);
+    const priceTiers = data.priceTiers?.length ? data.priceTiers : [{ minQty: 1, price: data.sellingPrice || 0 }];
+    setVariants(prev => [...prev, { id, name: data.name, category: data.category || '', stockQuantity: 0, averageInventoryCost: 0, sellingPrice: data.sellingPrice || 0, priceTiers, currency: data.currency || 'AED', images: data.images || [] }]);
     logAudit([makeAuditEntry(role, 'ProductVariant', id, 'created', null, data.name)]);
     showToast(`تمت إضافة المنتج "${data.name}"`);
     return id;
@@ -2778,10 +2877,10 @@ function useIsmaData() {
   }, [logAudit, showToast]);
 
   return {
-    clients, orders, payments, suppliers, variants, purchases, ledger, shipments, auditLog, categories,
+    clients, orders, payments, suppliers, variants, purchases, ledger, shipments, auditLog, categories, categorySizeTypes,
     setClients, setOrders,
     loaded, loadError, role, setRole, assistantCanPurchase, setAssistantCanPurchase, toast,
-    handleAddCategory, handleRemoveCategory, handleAdvance, handleAddPayment, handleAddSupplierPayment,
+    handleAddCategory, handleRemoveCategory, handleSetCategorySizeType, handleAdvance, handleAddPayment, handleAddSupplierPayment,
     handleLinkVariant, handleCreateShipment, handleUpdateShipmentStatus, handleRecordShippingLedgerEntry,
     handleUpdateClientNotes, handleUpdateNotes, handleCreateClient, handleCreateOrder, handleCreateSupplier,
     handleCreateVariant, handleUpdateVariant, handleCreatePurchase, handleMarkReceived,
@@ -2842,10 +2941,10 @@ export default function IsmaAdmin() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [session, setSession] = useState(null);
   const {
-    clients, orders, payments, suppliers, variants, purchases, ledger, shipments, auditLog, categories,
+    clients, orders, payments, suppliers, variants, purchases, ledger, shipments, auditLog, categories, categorySizeTypes,
     setClients, setOrders,
     loaded, loadError, role, setRole, assistantCanPurchase, setAssistantCanPurchase, toast,
-    handleAddCategory, handleRemoveCategory, handleAdvance, handleAddPayment, handleAddSupplierPayment,
+    handleAddCategory, handleRemoveCategory, handleSetCategorySizeType, handleAdvance, handleAddPayment, handleAddSupplierPayment,
     handleLinkVariant, handleCreateShipment, handleUpdateShipmentStatus, handleRecordShippingLedgerEntry,
     handleUpdateClientNotes, handleUpdateNotes, handleCreateClient, handleCreateOrder, handleCreateSupplier,
     handleCreateVariant, handleUpdateVariant, handleCreatePurchase, handleMarkReceived,
@@ -3050,6 +3149,7 @@ export default function IsmaAdmin() {
           )}
           {view.name === 'settings' && (
             <SettingsView categories={categories} onAddCategory={handleAddCategory} onRemoveCategory={handleRemoveCategory}
+              categorySizeTypes={categorySizeTypes} onSetCategorySizeType={handleSetCategorySizeType}
               variants={variants} role={role} assistantCanPurchase={assistantCanPurchase} />
           )}
           {view.name === 'payments' && role === 'owner' && (
