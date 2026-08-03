@@ -3346,12 +3346,6 @@ export default function IsmaAdmin() {
       : 'admin'
   );
   const [view, setView] = useState({ name: 'dashboard' });
-  // If Simple mode gets switched on while sitting on an advanced-only section, bounce home
-  // instead of leaving the user stranded on a page whose nav item just disappeared.
-  useEffect(() => {
-    const simpleKeys = ['dashboard', 'orders', 'clients', 'products', 'client-detail', 'order-detail'];
-    if (simpleMode && !simpleKeys.includes(view.name)) setView({ name: 'dashboard' });
-  }, [simpleMode]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [session, setSession] = useState(null);
   const {
@@ -3363,6 +3357,12 @@ export default function IsmaAdmin() {
     handleUpdateClientNotes, handleUpdateLastContact, handleUpdateNotes, handleCreateClient, handleCreateOrder, handleCreateSupplier,
     handleCreateVariant, handleUpdateVariant, handleCreatePurchase, handleMarkReceived,
   } = useIsmaData();
+  // If Simple mode gets switched on while sitting on an advanced-only section, bounce home
+  // instead of leaving the user stranded on a page whose nav item just disappeared.
+  useEffect(() => {
+    const simpleKeys = ['dashboard', 'orders', 'clients', 'products', 'client-detail', 'order-detail'];
+    if (simpleMode && !simpleKeys.includes(view.name)) setView({ name: 'dashboard' });
+  }, [simpleMode]);
 
   if (!loaded) {
     return (
