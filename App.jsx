@@ -650,7 +650,7 @@ function Dashboard({ orders, clients, payments, purchases, variants, ledger, rol
   );
 }
 
-function NewOrderModal({ clients, variants, onClose, onCreate }) {
+function NewOrderModal({ clients, variants, simpleMode, onClose, onCreate }) {
   const [clientId, setClientId] = useState(clients[0]?.id || '');
   const [productName, setProductName] = useState('');
   const [productVariantId, setProductVariantId] = useState('');
@@ -710,12 +710,14 @@ function NewOrderModal({ clients, variants, onClose, onCreate }) {
               {Object.entries(ORIGIN_LABELS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
           </div>
-          <div>
-            <label className="text-xs text-stone-500 block mb-1">ترتيب الشحن</label>
-            <select value={shippingArrangement} onChange={e => setShippingArrangement(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-stone-300 text-sm bg-[#FDF8ED]">
-              {Object.entries(SHIPPING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
+          {!simpleMode && (
+            <div>
+              <label className="text-xs text-stone-500 block mb-1">ترتيب الشحن</label>
+              <select value={shippingArrangement} onChange={e => setShippingArrangement(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-stone-300 text-sm bg-[#FDF8ED]">
+                {Object.entries(SHIPPING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <button
           onClick={() => {
@@ -750,7 +752,7 @@ function StatusDropdown({ status, onChange, compact }) {
   );
 }
 
-function OrdersList({ orders, clients, payments, role, setView, onSetStatus, onCreateOrder, variants, initialStatusFilter }) {
+function OrdersList({ orders, clients, payments, role, setView, onSetStatus, onCreateOrder, variants, initialStatusFilter, simpleMode }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(initialStatusFilter || 'all');
   const [originFilter, setOriginFilter] = useState('all');
@@ -796,7 +798,7 @@ function OrdersList({ orders, clients, payments, role, setView, onSetStatus, onC
       </div>
 
       {showNew && (
-        <NewOrderModal clients={clients} variants={variants} onClose={() => setShowNew(false)}
+        <NewOrderModal clients={clients} variants={variants} simpleMode={simpleMode} onClose={() => setShowNew(false)}
           onCreate={(data) => { onCreateOrder(data); setShowNew(false); }} />
       )}
 
@@ -875,7 +877,7 @@ function OrdersList({ orders, clients, payments, role, setView, onSetStatus, onC
   );
 }
 
-function OrderDetail({ order, client, payments, purchases, variants, ledger, shipments, role, onBack, onSetStatus, onAddPayment, onUpdateNotes, onLinkVariant, onOpenClient, onCreateShipment, setView }) {
+function OrderDetail({ order, client, payments, purchases, variants, ledger, shipments, role, onBack, onSetStatus, onAddPayment, onUpdateNotes, onLinkVariant, onOpenClient, onCreateShipment, setView, simpleMode }) {
   const [newPayment, setNewPayment] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('confirmed');
   const [notes, setNotes] = useState(order.notes || '');
@@ -942,7 +944,7 @@ function OrderDetail({ order, client, payments, purchases, variants, ledger, shi
               <div className="flex justify-between"><span className="text-stone-500">الكمية</span><span>{order.quantity}</span></div>
               <div className="flex justify-between"><span className="text-stone-500">السعر المتفق عليه</span><span className="font-medium">{order.agreedPrice} {order.currency}</span></div>
               <div className="flex justify-between"><span className="text-stone-500">مصدر الطلب</span><OriginTag originType={order.originType} /></div>
-              <div className="flex justify-between"><span className="text-stone-500">الشحن</span><span>{SHIPPING_LABELS[order.shippingArrangement]}</span></div>
+              {!simpleMode && <div className="flex justify-between"><span className="text-stone-500">الشحن</span><span>{SHIPPING_LABELS[order.shippingArrangement]}</span></div>}
             </div>
           </div>
 
@@ -1017,7 +1019,7 @@ function OrderDetail({ order, client, payments, purchases, variants, ledger, shi
         </div>
 
         {/* Shipment (optional, logistics-only) */}
-        {canHaveShipment && (
+        {!simpleMode && canHaveShipment && (
           <div className="mt-6 pt-5 border-t border-stone-100">
             <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wide flex items-center gap-1.5 border-s-2 border-[#F97316]/50 ps-2 mb-3"><Truck size={13} className="opacity-70" /> الشحن</h4>
             {existingShipment ? (
@@ -3527,14 +3529,14 @@ export default function IsmaAdmin() {
           {view.name === 'dashboard' && (simpleMode
             ? <TodayView orders={orders} clients={clients} variants={variants} purchases={purchases} ledger={ledger} role={role} setView={setView} />
             : <Dashboard orders={orders} clients={clients} payments={payments} purchases={purchases} variants={variants} ledger={ledger} role={role} setView={setView} />)}
-          {view.name === 'orders' && <OrdersList key={view.statusFilter || 'all'} orders={orders} clients={clients} payments={payments} role={role} setView={setView} onSetStatus={handleSetOrderStatus} onCreateOrder={handleCreateOrder} variants={variants} initialStatusFilter={view.statusFilter} />}
+          {view.name === 'orders' && <OrdersList key={view.statusFilter || 'all'} orders={orders} clients={clients} payments={payments} role={role} setView={setView} onSetStatus={handleSetOrderStatus} onCreateOrder={handleCreateOrder} variants={variants} initialStatusFilter={view.statusFilter} simpleMode={simpleMode} />}
           {view.name === 'order-detail' && activeOrder && (
             <OrderDetail order={activeOrder} client={activeClient} payments={payments} purchases={purchases} variants={variants} ledger={ledger} shipments={shipments} role={role}
               onBack={() => setView({ name: 'orders' })} onSetStatus={handleSetOrderStatus}
               onAddPayment={handleAddPayment} onUpdateNotes={handleUpdateNotes} onLinkVariant={handleLinkVariant}
               onOpenClient={(clientId) => setView({ name: 'client-detail', id: clientId })}
               onCreateShipment={(orderId, partner, actingRole) => { const id = handleCreateShipment(orderId, partner, actingRole); setView({ name: 'shipment-detail', id }); }}
-              setView={setView} />
+              setView={setView} simpleMode={simpleMode} />
           )}
           {view.name === 'clients' && <ClientsList clients={clients} orders={orders} ledger={ledger} setView={setView} onCreateClient={handleCreateClient} />}
           {view.name === 'client-detail' && activeClientProfile && (
